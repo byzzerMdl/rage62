@@ -1,8 +1,7 @@
 #include "rage62/rpf7.h"
 #include "rage62/archive.h"
+#include "bridge_error.h"
 
-#include <algorithm>
-#include <cstring>
 #include <exception>
 #include <memory>
 #include <ostream>
@@ -13,12 +12,7 @@ struct rage62_rpf7 {
 };
 
 namespace {
-void set_error(char* output, size_t capacity, const char* message) {
-    if (!output || capacity == 0) return;
-    const auto length = std::min(std::strlen(message), capacity - 1);
-    std::memcpy(output, message, length);
-    output[length] = '\0';
-}
+using rage62::detail::set_error;
 
 class SinkBuffer : public std::streambuf {
 public:
