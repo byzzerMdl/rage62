@@ -11,6 +11,8 @@ for build commands and CLI usage.
   catalog, and binary payload streaming.
 - `tools/rpf7/include/rage62/rpf9.h` and `tools/rpf7/src/rpf9.cpp` handle the
   RPF9 header, supplied plaintext location records, and raw spans.
+- `tools/rpf7/src/rpf9_chunks.cpp` decodes RPF9 payload blocks using a supplied
+  plaintext chunk table.
 - `tools/rpf7/include/rage62/rpf7.h` and `tools/rpf7/src/bridge.cpp` define the
   C ABI used by native host callers.
 - `tools/rpf7/include/rage62/rpf9_bridge.h` and `tools/rpf7/src/rpf9_bridge.cpp`

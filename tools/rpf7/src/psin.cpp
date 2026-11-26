@@ -1,23 +1,20 @@
 #include "rage62/psin.h"
 #include "archive_io.h"
+#include "zlib_member.h"
 
 #include <limits>
 #include <string_view>
 #include <utility>
 
-#ifdef RAGE62_HAS_ZLIB
-#include <zlib.h>
-#endif
-
 namespace rage62 {
 namespace {
 
-constexpr std::size_t resource_limit = 64 * 1024 * 1024;
 constexpr std::size_t chunk_header_size = 8;
 constexpr std::size_t schema_record_size = 16;
 constexpr std::array<std::string_view, 7> chain = {"PSIN", "LSCH", "LENM", "LSNS", "LGID", "LRSC", "CHKS"};
 using detail::fail;
 using detail::little_word;
+using detail::max_resource_bytes;
 
 struct SchemaTable {
     std::size_t header_size;
@@ -34,35 +31,6 @@ struct SchemaTable {
 
 constexpr SchemaTable structures{32, 16, 0xaa, 28, 16, "invalid PSIN LSCH table"};
 constexpr SchemaTable enums{24, 8, 0xee, 16, 0, "invalid PSIN LENM table"};
-
-bool inflate_zlib(std::string& encoded, std::string& decoded, std::string& error) {
-#ifdef RAGE62_HAS_ZLIB
-    z_stream inflater{};
-    if (inflateInit2(&inflater, MAX_WBITS) != Z_OK) return fail(error, "cannot initialize PSIN inflater");
-    struct InflaterEnd {
-        z_stream& stream;
-        ~InflaterEnd() { inflateEnd(&stream); }
-    } cleanup{inflater};
-    inflater.next_in = reinterpret_cast<Bytef*>(encoded.data());
-    inflater.avail_in = static_cast<uInt>(encoded.size());
-    std::array<char, 32 * 1024> buffer;
-    int status;
-    do {
-        inflater.next_out = reinterpret_cast<Bytef*>(buffer.data());
-        inflater.avail_out = static_cast<uInt>(buffer.size());
-        status = inflate(&inflater, Z_NO_FLUSH);
-        if (status != Z_OK && status != Z_STREAM_END) return fail(error, "invalid PSIN zlib stream");
-        const auto count = buffer.size() - inflater.avail_out;
-        if (count > resource_limit - decoded.size()) return fail(error, "decoded PSIN exceeds the 64 MiB limit");
-        decoded.append(buffer.data(), count);
-    } while (status != Z_STREAM_END);
-    return inflater.avail_in == 0 || fail(error, "trailing bytes after PSIN zlib stream");
-#else
-    (void)encoded;
-    (void)decoded;
-    return fail(error, "compressed PSIN requires a build with zlib");
-#endif
-}
 
 bool read_chunks(PsinResource& resource, std::string& error) {
     const std::string_view bytes(resource.data);
@@ -153,10 +121,20 @@ bool read_enums(PsinResource& resource, std::string& error) {
 
 }
 
+bool parse_psin(std::string bytes, PsinResource& resource, std::string& error) {
+    if (bytes.size() > max_resource_bytes) return fail(error, "PSIN exceeds the 64 MiB limit");
+    PsinResource result;
+    result.data = std::move(bytes);
+    if (!read_chunks(result, error) || !read_structures(result, error) || !read_enums(result, error)) return false;
+    resource = std::move(result);
+    error.clear();
+    return true;
+}
+
 bool load_psin(Rpf9Archive& archive, std::size_t entry, std::uint64_t stored_size,
                PsinResource& resource, std::string& error) {
     if (entry >= archive.entries().size()) return fail(error, "PSIN entry index out of range");
-    if (stored_size == 0 || stored_size > archive.entries()[entry].span || stored_size > resource_limit) {
+    if (stored_size == 0 || stored_size > archive.entries()[entry].span || stored_size > max_resource_bytes) {
         return fail(error, "PSIN stored size must fit its RPF9 span and the 64 MiB limit");
     }
 
@@ -165,22 +143,15 @@ bool load_psin(Rpf9Archive& archive, std::size_t entry, std::uint64_t stored_siz
     if (!archive.read_span(entry, 0, encoded.data(), encoded.size(), received, error)) return false;
     if (received != encoded.size()) return fail(error, "truncated PSIN resource");
 
-    PsinResource result;
-    if (encoded.compare(0, 4, "PSIN") == 0) {
-        result.data = std::move(encoded);
-    } else {
-        const auto* header = reinterpret_cast<const unsigned char*>(encoded.data());
-        if (encoded.size() < 2 || (header[0] & 0xf) != 8 || (header[0] >> 4) > 7 ||
-            ((std::uint32_t(header[0]) << 8) | header[1]) % 31 != 0) {
-            return fail(error, "expected PSIN resource or zlib member");
-        }
-        if (!inflate_zlib(encoded, result.data, error)) return false;
+    if (encoded.compare(0, 4, "PSIN") == 0) return parse_psin(std::move(encoded), resource, error);
+    const auto* header = reinterpret_cast<const unsigned char*>(encoded.data());
+    if (encoded.size() < 2 || (header[0] & 0xf) != 8 || (header[0] >> 4) > 7 ||
+        ((std::uint32_t(header[0]) << 8) | header[1]) % 31 != 0) {
+        return fail(error, "expected PSIN resource or zlib member");
     }
-    if (!read_chunks(result, error) || !read_structures(result, error) || !read_enums(result, error)) return false;
-
-    resource = std::move(result);
-    error.clear();
-    return true;
+    std::string decoded;
+    return detail::append_zlib_member(encoded, decoded, max_resource_bytes, error) &&
+           parse_psin(std::move(decoded), resource, error);
 }
 
 }

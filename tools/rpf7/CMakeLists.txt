@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(rage62_rpf LANGUAGES C CXX)
 
-add_library(rage62_archive STATIC src/archive.cpp src/rpf9.cpp src/psin.cpp)
+add_library(rage62_archive STATIC src/archive.cpp src/rpf9.cpp src/rpf9_chunks.cpp src/psin.cpp src/zlib_member.cpp)
 set_target_properties(rage62_archive PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_features(rage62_archive PUBLIC cxx_std_17)
 target_include_directories(rage62_archive PUBLIC include)
@@ -43,6 +43,13 @@ if(BUILD_TESTING)
     add_executable(rage62_rpf9_test tests/rpf9_test.cpp)
     target_link_libraries(rage62_rpf9_test PRIVATE rage62_archive)
     add_test(NAME rpf9_reader COMMAND rage62_rpf9_test)
+
+    add_executable(rage62_rpf9_chunks_test tests/rpf9_chunks_test.cpp)
+    target_link_libraries(rage62_rpf9_chunks_test PRIVATE rage62_archive)
+    if(ZLIB_FOUND)
+        target_compile_definitions(rage62_rpf9_chunks_test PRIVATE RAGE62_HAS_ZLIB=1)
+    endif()
+    add_test(NAME rpf9_chunks COMMAND rage62_rpf9_chunks_test)
 
     add_executable(rage62_psin_test tests/psin_test.cpp)
     target_link_libraries(rage62_psin_test PRIVATE rage62_archive)

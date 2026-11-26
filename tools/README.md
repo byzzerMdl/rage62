@@ -112,3 +112,17 @@ data each have a 64 MiB limit. Instance decoding, script execution and the
 RAGE 2015 integration remain separate milestones. See the
 [PSIN format measurements](https://github.com/JoshRob297/rpf9-research/blob/main/docs/PSIN.md) and
 [record field reference](https://github.com/rpatty-dev/PercyStar/blob/6a64e53f6d1c48aae250109232eebb02a2a68e36/src/vehicle_data.rs#L287-L339).
+
+For a chunked entry, add the path to the supplied plaintext chunk-table value
+as the final argument. The stored byte length includes the encoding-2 prefix
+and all padding described by the table. The input table can be up to 1 MiB.
+
+```powershell
+../rage62-rpf-build/rage62_host.exe sample.rpf sample.catalog 0 96 sample.chunks
+```
+
+The decoder supports table encodings 2, 3, and 4. It checks stored and decoded
+sizes, skips table-declared padding, and reads each zlib block independently.
+Copy blocks work in builds without zlib. C++ callers can read the decoded
+payload through [`read_rpf9_chunks`](rpf7/include/rage62/rpf9_chunks.h).
+The supported formats follow the [RPF9 payload measurements](https://github.com/leonidaforge/research/blob/main/formats/containers/rpf9/payloads.md#chunk-table).
