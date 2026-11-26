@@ -32,6 +32,7 @@ int startup(const std::filesystem::path& archive_path, const std::filesystem::pa
         std::cout.write(chunk.tag.data(), chunk.tag.size());
         std::cout << " offset=" << chunk.offset << " length=" << chunk.size << '\n';
     }
+    std::cout << "schema structures=" << resource.structures.size() << " enums=" << resource.enums.size() << '\n';
     std::cout.flush();
     return std::cout ? 0 : 1;
 }

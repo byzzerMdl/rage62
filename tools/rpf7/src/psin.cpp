@@ -1,6 +1,7 @@
 #include "rage62/psin.h"
 #include "archive_io.h"
 
+#include <limits>
 #include <string_view>
 #include <utility>
 
@@ -13,8 +14,26 @@ namespace {
 
 constexpr std::size_t resource_limit = 64 * 1024 * 1024;
 constexpr std::size_t chunk_header_size = 8;
+constexpr std::size_t schema_record_size = 16;
 constexpr std::array<std::string_view, 7> chain = {"PSIN", "LSCH", "LENM", "LSNS", "LGID", "LRSC", "CHKS"};
 using detail::fail;
+using detail::little_word;
+
+struct SchemaTable {
+    std::size_t header_size;
+    std::size_t marker_offset;
+    unsigned char marker;
+    std::size_t count_offset;
+    unsigned count_shift;
+    const char* diagnostic;
+
+    std::uint32_t count(const unsigned char* header) const {
+        return little_word(header + count_offset) >> count_shift;
+    }
+};
+
+constexpr SchemaTable structures{32, 16, 0xaa, 28, 16, "invalid PSIN LSCH table"};
+constexpr SchemaTable enums{24, 8, 0xee, 16, 0, "invalid PSIN LENM table"};
 
 bool inflate_zlib(std::string& encoded, std::string& decoded, std::string& error) {
 #ifdef RAGE62_HAS_ZLIB
@@ -64,6 +83,74 @@ bool read_chunks(PsinResource& resource, std::string& error) {
     return offset == bytes.size() || fail(error, "trailing bytes after PSIN chunk chain");
 }
 
+std::string_view chunk_body(const PsinResource& resource, std::size_t index) {
+    const auto& chunk = resource.chunks[index];
+    return std::string_view(resource.data).substr(chunk.offset + chunk_header_size, chunk.size - chunk_header_size);
+}
+
+bool schema_headers(std::string_view body, const SchemaTable& format, std::size_t& end, std::string& error) {
+    const auto* data = reinterpret_cast<const unsigned char*>(body.data());
+    end = 0;
+    std::size_t record_bytes = 0;
+    while (end + record_bytes != body.size()) {
+        const auto remaining = body.size() - end - record_bytes;
+        if (remaining < format.header_size) return fail(error, format.diagnostic);
+        const auto* header = data + end;
+        const auto* marker = header + format.marker_offset;
+        if (std::any_of(marker, marker + 8, [&](unsigned char byte) { return byte != format.marker; })) {
+            return fail(error, format.diagnostic);
+        }
+        const auto count = format.count(header);
+        if (count > (remaining - format.header_size) / schema_record_size) return fail(error, format.diagnostic);
+        record_bytes += std::size_t(count) * schema_record_size;
+        end += format.header_size;
+    }
+    return true;
+}
+
+bool read_structures(PsinResource& resource, std::string& error) {
+    const auto body = chunk_body(resource, 1);
+    std::size_t header_end;
+    if (!schema_headers(body, structures, header_end, error)) return false;
+    const auto* header = reinterpret_cast<const unsigned char*>(body.data());
+    const auto* field = header + header_end;
+    resource.structures.reserve(header_end / structures.header_size);
+    for (std::size_t pos = 0; pos < header_end; pos += structures.header_size, header += structures.header_size) {
+        auto& type = resource.structures.emplace_back(PsinStructure{little_word(header), little_word(header + 24), {}});
+        const auto count = structures.count(header);
+        type.fields.reserve(count);
+        for (std::uint32_t i = 0; i < count; ++i, field += schema_record_size) {
+            type.fields.push_back({little_word(field), little_word(field + 4),
+                                   little_word(field + 8), little_word(field + 12)});
+        }
+    }
+    return true;
+}
+
+std::int64_t signed_le64(const unsigned char* bytes) {
+    const auto bits = (std::uint64_t(little_word(bytes + 4)) << 32) | little_word(bytes);
+    if (bits <= std::uint64_t(std::numeric_limits<std::int64_t>::max())) return static_cast<std::int64_t>(bits);
+    return -1 - static_cast<std::int64_t>(std::numeric_limits<std::uint64_t>::max() - bits);
+}
+
+bool read_enums(PsinResource& resource, std::string& error) {
+    const auto body = chunk_body(resource, 2);
+    std::size_t header_end;
+    if (!schema_headers(body, enums, header_end, error)) return false;
+    const auto* header = reinterpret_cast<const unsigned char*>(body.data());
+    const auto* value = header + header_end;
+    resource.enums.reserve(header_end / enums.header_size);
+    for (std::size_t pos = 0; pos < header_end; pos += enums.header_size, header += enums.header_size) {
+        auto& type = resource.enums.emplace_back(PsinEnum{little_word(header), {}});
+        const auto count = enums.count(header);
+        type.values.reserve(count);
+        for (std::uint32_t i = 0; i < count; ++i, value += schema_record_size) {
+            type.values.push_back({signed_le64(value), little_word(value + 8)});
+        }
+    }
+    return true;
+}
+
 }
 
 bool load_psin(Rpf9Archive& archive, std::size_t entry, std::uint64_t stored_size,
@@ -89,7 +176,7 @@ bool load_psin(Rpf9Archive& archive, std::size_t entry, std::uint64_t stored_siz
         }
         if (!inflate_zlib(encoded, result.data, error)) return false;
     }
-    if (!read_chunks(result, error)) return false;
+    if (!read_chunks(result, error) || !read_structures(result, error) || !read_enums(result, error)) return false;
 
     resource = std::move(result);
     error.clear();

@@ -12,7 +12,7 @@ RAGE 9. The long-term goal is native GTA VI startup in the adapted host.
 | RPF7 baseline | The standalone reader lists little-endian `OPEN` and `NONE` catalogs and streams unencrypted binary entries. zlib enables raw DEFLATE. |
 | Native host bridges | Windows DLLs expose a C ABI for RPF7 and RPF9. The RPF9 adapter supports bounded, offset-based reads from physical entry spans. |
 | RPF9 | Reads the 64-byte header, lists location records from a supplied plaintext catalog, and copies raw payload spans. Verified with synthetic fixtures. |
-| Standalone host | Opens an RPF9 archive and loads a stored or zlib-compressed PSIN resource. It validates the resource's section framing. |
+| Standalone host | Loads stored or zlib-compressed PSIN from RPF9 and reads its sections, structures, fields, and enum values. |
 | RAGE 7 integration | The first milestone is loading one RAGE 9 resource through a RAGE 2015 host subsystem. |
 | Game startup | Requires verified asset loading, runtime interfaces, and renderer integration. |
 
@@ -38,8 +38,8 @@ Engine-side tests require access to a compatible RAGE 2015 development
 environment with permission to modify it.
 
 1. **Implement the required RAGE 9 data support.** The standalone host reads
-   PSIN framing from RPF9 with a synthetic catalog. The next data step is
-   decoding the metadata bodies and validating them with a host consumer.
+   PSIN framing and schema from RPF9 with a supplied open catalog. The next
+   data step is decoding the PSIN instances and mapping them to host types.
 2. **Integrate the module into RAGE 2015.** Build it against the compatible
    host and connect it to the relevant filesystem or resource-loading
    subsystem. Verify that the host can consume the synthetic RAGE 9 resource.

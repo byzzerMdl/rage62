@@ -104,7 +104,11 @@ An RPF9 size hint may describe a different size than the stored payload.
 
 The host reads a raw PSIN resource or one zlib member when built with zlib. It
 validates the seven-section chain from `PSIN` through `CHKS` and reports each
-section's offset and length. Both the input and inflated data have a 64 MiB
-limit. This command validates resource framing. Script execution and the
+section's offset and length, plus the number of structures and enums. The
+[`PsinResource` API](rpf7/include/rage62/psin.h) exposes the `LSCH` structures
+and field descriptors and the `LENM` enums and signed values. Both tables
+require the headers-first layout and exact record counts. Input and inflated
+data each have a 64 MiB limit. Instance decoding, script execution and the
 RAGE 2015 integration remain separate milestones. See the
-[PSIN format measurements](https://github.com/JoshRob297/rpf9-research/blob/main/docs/PSIN.md).
+[PSIN format measurements](https://github.com/JoshRob297/rpf9-research/blob/main/docs/PSIN.md) and
+[record field reference](https://github.com/rpatty-dev/PercyStar/blob/6a64e53f6d1c48aae250109232eebb02a2a68e36/src/vehicle_data.rs#L287-L339).
