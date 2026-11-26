@@ -46,3 +46,38 @@ host-side file adapter.
 
 The record layout was cross-checked against the public
 [CodeWalker RPF implementation](https://github.com/dexyfex/CodeWalker/blob/master/CodeWalker.Core/GameFiles/RpfFile.cs).
+
+### RPF9 container inspection
+
+`--rpf9-info` validates the 64-byte header and reports both table boundaries,
+the payload region, the trailer length and the declared record count. The
+payload region can start with alignment padding.
+
+```powershell
+../rage62-rpf-build/rage62_rpf.exe --rpf9-info sample.rpf
+../rage62-rpf-build/rage62_rpf.exe --rpf9-list sample.rpf sample.catalog
+../rage62-rpf-build/rage62_rpf.exe --rpf9-copy-span sample.rpf sample.catalog 0 > entry.bin
+```
+
+The last two commands take a separate, plaintext table you supply. Its size
+must be the declared count multiplied by 24. Each row contains six little-
+endian 32-bit words in this order.
+
+| Byte offset | Field |
+| --- | --- |
+| 0 | Size hint |
+| 4 | Zero |
+| 8 | Archive offset in 16-byte units |
+| 12 | Flags |
+| 16 | Opaque identifier |
+| 20 | Zero |
+
+Rows keep their original order. Each span extends to the next distinct
+offset or to the trailer. The raw output can contain padding, and the size
+hint can differ from the logical file size. The 64 MiB catalog limit applies
+to this input table. Use PowerShell 7.4+ or `cmd.exe` for binary redirection.
+
+The C++ interface is in [`rpf9.h`](rpf7/include/rage62/rpf9.h). The on-disk
+catalog and trailer are treated as opaque regions. Header geometry follows
+the [published measurements](https://github.com/JoshRob297/rpf9-research/blob/main/docs/RPF9.md).
+The supported location words follow the [public record description](https://github.com/zeozeozeo/rpf9/blob/main/src/entry.rs).

@@ -114,7 +114,7 @@ int main() {
     rage62::ArchiveHeader header{};
     std::string error;
     { std::ofstream f(path, std::ios::binary); const char bytes[16] = {'9','F','P','R',16}; f.write(bytes, 16); }
-    if (!rage62::read_archive_header(path, header, error) || header.version != rage62::ArchiveVersion::rpf9) return 1;
+    if (rage62::read_archive_header(path, header, error)) return 1;
     { std::ofstream f(path, std::ios::binary | std::ios::trunc); f << "bad"; }
     if (rage62::read_archive_header(path, header, error)) return 2;
     const auto valid = std::filesystem::current_path() / "rage62_rpf7_test.rpf";

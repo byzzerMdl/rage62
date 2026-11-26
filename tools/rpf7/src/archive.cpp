@@ -1,4 +1,5 @@
 #include "rage62/archive.h"
+#include "archive_io.h"
 #include <algorithm>
 #include <array>
 #include <utility>
@@ -9,16 +10,12 @@
 
 namespace rage62 {
 namespace {
+using detail::fail;
+
 std::uint32_t word(const unsigned char* p, bool big) {
     if (big) return (std::uint32_t(p[0]) << 24) | (std::uint32_t(p[1]) << 16) |
                     (std::uint32_t(p[2]) << 8) | p[3];
-    return (std::uint32_t(p[3]) << 24) | (std::uint32_t(p[2]) << 16) |
-           (std::uint32_t(p[1]) << 8) | p[0];
-}
-
-bool fail(std::string& error, const char* message) {
-    error = message;
-    return false;
+    return detail::little_word(p);
 }
 
 bool read_header(std::ifstream& stream, ArchiveHeader& header, std::string& error) {
@@ -36,9 +33,9 @@ bool read_header(std::ifstream& stream, ArchiveHeader& header, std::string& erro
     ArchiveHeader result{nine ? ArchiveVersion::rpf9 : ArchiveVersion::rpf7,
                          static_cast<std::uint64_t>(end), word(bytes.data()+4, big7),
                          word(bytes.data()+8, big7), word(bytes.data()+12, big7), big7};
-    if (nine && (result.first < 16 || result.first > result.file_size ||
-                 result.third > result.file_size - result.first)) {
-        error = "invalid RPF9 regions"; return false;
+    if (nine) {
+        Rpf9Header rpf9;
+        if (!detail::read_rpf9_header(stream, result.file_size, rpf9, error)) return false;
     }
     if (!nine && 16ull + 16ull * result.first + result.second > result.file_size) {
         error = "invalid RPF7 index size"; return false;
@@ -262,15 +259,6 @@ bool Rpf7Archive::copy_file(const std::string& path, std::ostream& output, std::
         error.clear();
         return true;
     }
-    std::array<char, 64 * 1024> buffer{};
-    auto remaining = entry->stored_size;
-    while (remaining != 0) {
-        const auto length = std::min<std::size_t>(remaining, buffer.size());
-        if (!stream_.read(buffer.data(), length)) return fail(error, "cannot read RPF7 file data");
-        if (!output.write(buffer.data(), length)) return fail(error, "cannot write RPF7 file data");
-        remaining -= static_cast<std::uint32_t>(length);
-    }
-    error.clear();
-    return true;
+    return detail::copy_bytes(stream_, output, entry->stored_size, error);
 }
 }

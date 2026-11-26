@@ -7,8 +7,10 @@ for build commands and CLI usage.
 ## Find the relevant code
 
 - `tools/inspect_pe.py` inspects a PE file and reports image metadata.
-- `tools/rpf7/src/archive.cpp` handles RPF headers, the open RPF7 catalog, and
-  binary payload streaming.
+- `tools/rpf7/src/archive.cpp` handles common header probing, the open RPF7
+  catalog, and binary payload streaming.
+- `tools/rpf7/include/rage62/rpf9.h` and `tools/rpf7/src/rpf9.cpp` handle the
+  RPF9 header, supplied plaintext location records, and raw spans.
 - `tools/rpf7/include/rage62/rpf7.h` and `tools/rpf7/src/bridge.cpp` define the
   C ABI used by native host callers.
 - `tools/rpf7/tests/` contains the synthetic archive reader and C host tests.
