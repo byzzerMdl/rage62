@@ -91,3 +91,20 @@ into a caller-owned buffer. Reads use offsets relative to the physical span.
 They return fewer bytes at span end and zero bytes at end of span. The standalone
 C host test checks that reads stay clear of the next entry and the archive
 trailer. Resource decoding and the engine-side file adapter are separate steps.
+
+### Starting the standalone PSIN host
+
+Run `rage62_host` with the archive, a supplied plaintext catalog, the decimal
+entry index and the exact stored byte length. Provide the length before padding.
+An RPF9 size hint may describe a different size than the stored payload.
+
+```powershell
+../rage62-rpf-build/rage62_host.exe sample.rpf sample.catalog 0 59
+```
+
+The host reads a raw PSIN resource or one zlib member when built with zlib. It
+validates the seven-section chain from `PSIN` through `CHKS` and reports each
+section's offset and length. Both the input and inflated data have a 64 MiB
+limit. This command validates resource framing. Script execution and the
+RAGE 2015 integration remain separate milestones. See the
+[PSIN format measurements](https://github.com/JoshRob297/rpf9-research/blob/main/docs/PSIN.md).

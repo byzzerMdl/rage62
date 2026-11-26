@@ -15,6 +15,8 @@ for build commands and CLI usage.
   C ABI used by native host callers.
 - `tools/rpf7/include/rage62/rpf9_bridge.h` and `tools/rpf7/src/rpf9_bridge.cpp`
   expose the RPF9 entry metadata and bounded read API to a native host.
+- `tools/rpf7/src/host.cpp` and `tools/rpf7/src/psin.cpp` load PSIN framing
+  from an RPF9 entry in the standalone host.
 - `tools/rpf7/tests/` contains the synthetic archive reader and C host tests.
 
 ## Develop and verify a change
