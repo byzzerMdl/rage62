@@ -129,6 +129,8 @@ Exact integration steps depend on the module and the local engine configuration.
 
 Additional build documentation will be added as development progresses.
 
+See [the native RPF tools](tools/README.md#native-rpf-tools) for standalone archive inspection and the C host interface.
+
 ## 🤝 Contributing
 
 **WE NEED CONTRIBUTORS!**
