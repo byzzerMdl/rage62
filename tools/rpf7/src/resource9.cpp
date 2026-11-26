@@ -11,8 +11,13 @@ constexpr std::size_t split_chunk_size = 0x2000000;
 constexpr std::size_t page_unit = 0x10000;
 constexpr std::size_t map_header_size = 16;
 constexpr std::size_t map_slot_size = 8;
+constexpr std::size_t directory_record_size = 16;
 using detail::fail;
 using detail::little_word;
+
+std::uint64_t little_quad(const unsigned char* bytes) {
+    return (std::uint64_t(little_word(bytes + 4)) << 32) | little_word(bytes);
+}
 
 bool page_sizes_match(const std::vector<Rage9Page>& pages, std::size_t start, std::size_t count) {
     if (count <= 1) return true;
@@ -94,6 +99,43 @@ std::optional<std::string_view> Rage9Resource::resolve(std::uint64_t pointer, st
     if (offset >= size || length > size - offset) return std::nullopt;
     const auto base = selector == 5 ? 0 : system_size();
     return std::string_view(bytes_).substr(base + offset, length);
+}
+
+bool Rage9Resource::read_0drp_root(Rage9DirectoryRoot& root, std::string& error) const {
+    if (!is_0drp()) return fail(error, "RAGE 9 resource has no 0DRP directory");
+    constexpr std::size_t root_end = 0x50;
+    const auto header = resolve(0x50000000, root_end);
+    if (!header) return fail(error, "truncated 0DRP root header");
+    const auto* bytes = reinterpret_cast<const unsigned char*>(header->data());
+    if (bytes[0x14] != 0x7a) return fail(error, "unsupported 0DRP root version");
+
+    Rage9DirectoryRoot parsed{};
+    parsed.word_20 = little_quad(bytes + 0x20);
+    for (std::size_t i = 0; i < parsed.pointers.size(); ++i) parsed.pointers[i] = little_quad(bytes + 0x28 + i * 8);
+    for (std::size_t i = 0; i < parsed.fields.size(); ++i) {
+        const auto* field = bytes + 0x48 + i * 2;
+        parsed.fields[i] = std::uint16_t(unsigned(field[0]) | (unsigned(field[1]) << 8));
+    }
+    const auto table = parsed.pointers[2];
+    if (parsed.record_count() != 0 &&
+        ((table >> 28) != 5 || !resolve(table, parsed.record_count() * directory_record_size))) {
+        return fail(error, "0DRP record table exceeds the system segment");
+    }
+
+    root = parsed;
+    error.clear();
+    return true;
+}
+
+bool Rage9Resource::read_0drp_record(std::size_t index, Rage9DirectoryRecord& record, std::string& error) const {
+    Rage9DirectoryRoot root;
+    if (!read_0drp_root(root, error)) return false;
+    if (index >= root.record_count()) return fail(error, "0DRP record index out of range");
+    const auto view = resolve(root.pointers[2] + index * directory_record_size, directory_record_size);
+    if (!view) return fail(error, "0DRP record exceeds the system segment");
+    const auto* row = reinterpret_cast<const unsigned char*>(view->data());
+    record = {little_word(row), little_word(row + 4), little_quad(row + 8)};
+    return true;
 }
 
 }

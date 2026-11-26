@@ -156,3 +156,18 @@ belongs to the resource. Resource-specific object layouts and runtime objects
 are outside the page loader's scope. See the
 [page map](https://github.com/leonidaforge/research/blob/main/formats/resources/pages.md)
 and [pointer encoding](https://github.com/leonidaforge/research/blob/main/formats/resources/pointers.md).
+
+For a resource with a `0DRP` root, `--directory` uses the same inputs and
+reports the table pointer, raw record words, and resolution status.
+
+```powershell
+../rage62-rpf-build/rage62_host.exe --directory sample.rpf sample.catalog 0 240 sample.chunks
+```
+
+The directory reader supports the observed `0x7a` version and checks that the
+whole record table fits in the system segment. It treats the second record
+word as a length hint when checking the pointed range. An unresolved record
+retains its metadata. In the C API, `rage62_resource9_0drp_count` and
+`rage62_resource9_0drp_record` expose the table. A returned `data` view belongs
+to the resource and can be null. See the
+[record layout and open questions](https://github.com/leonidaforge/research/blob/main/formats/resources/README.md#records-behind-0x38).

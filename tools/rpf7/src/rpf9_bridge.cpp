@@ -144,3 +144,29 @@ const void* rage62_resource9_resolve(const rage62_resource9* resource, uint64_t 
     const auto view = resource->resource.resolve(pointer, length);
     return view ? view->data() : nullptr;
 }
+
+int rage62_resource9_0drp_count(const rage62_resource9* resource, size_t* count) {
+    if (!resource || !count) return 0;
+    try {
+        rage62::Rage9DirectoryRoot root;
+        std::string error;
+        if (!resource->resource.read_0drp_root(root, error)) return 0;
+        *count = root.record_count();
+        return 1;
+    } catch (const std::exception&) {
+        return 0;
+    }
+}
+
+int rage62_resource9_0drp_record(const rage62_resource9* resource, size_t index, rage62_0drp_record* record) {
+    if (!resource || !record) return 0;
+    try {
+        rage62::Rage9DirectoryRecord row;
+        std::string error;
+        if (!resource->resource.read_0drp_record(index, row, error)) return 0;
+        *record = {row.word_0, row.size_hint, row.pointer, rage62_resource9_resolve(resource, row.pointer, row.size_hint)};
+        return 1;
+    } catch (const std::exception&) {
+        return 0;
+    }
+}

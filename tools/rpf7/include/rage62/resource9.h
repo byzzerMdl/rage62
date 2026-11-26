@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -14,6 +15,20 @@ struct Rage9Page {
     std::size_t offset; // In the decoded entry, before splitting it into segments.
     std::size_t size;
     std::size_t chunks;
+};
+
+struct Rage9DirectoryRoot {
+    std::uint64_t word_20;
+    std::array<std::uint64_t, 4> pointers;
+    std::array<std::uint16_t, 4> fields;
+
+    std::size_t record_count() const { return fields[2]; }
+};
+
+struct Rage9DirectoryRecord {
+    std::uint32_t word_0;
+    std::uint32_t size_hint;
+    std::uint64_t pointer;
 };
 
 class Rage9Resource {
@@ -31,6 +46,9 @@ public:
 
     // Resolves a stored resource pointer, returning a view owned by this resource.
     std::optional<std::string_view> resolve(std::uint64_t pointer, std::size_t length) const;
+
+    bool read_0drp_root(Rage9DirectoryRoot& root, std::string& error) const;
+    bool read_0drp_record(std::size_t index, Rage9DirectoryRecord& record, std::string& error) const;
 
 private:
     std::string bytes_;

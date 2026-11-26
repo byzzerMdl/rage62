@@ -12,7 +12,7 @@ static int write_file(const char* path, const void* bytes, size_t size) {
 }
 
 static int write_fixtures(const char* archive, const char* catalog) {
-    unsigned char image[560] = {'9', 'F', 'P', 'R', 80, 0, 0, 0, 64, 0, 0, 0, 16};
+    unsigned char image[624] = {'9', 'F', 'P', 'R', 80, 0, 0, 0, 64, 0, 0, 0, 16};
     unsigned char locations[120] = {0};
     unsigned char resource[96] = {
         'P', 'S', 'I', 'N', 0, 0, 0, 48,
@@ -27,13 +27,24 @@ static int write_fixtures(const char* archive, const char* catalog) {
     memcpy(image + 160, resource, sizeof(resource));
     memcpy(image + 272, resource, sizeof(resource));
     // Fifth entry: encoding-2 prefix, system page and graphics page.
-    image[392] = 0x40;
+    image[392] = 0x50;
     image[395] = 0x50;
     memcpy(image + 400, "0DRP", 4);
-    image[456] = 1;
-    image[457] = 1;
-    memcpy(image + 512, "pixel", 5);
-    memset(image + 544, 'T', 16);
+    image[404] = 0x7a;
+    image[440] = 0x80;
+    image[443] = 0x50;
+    image[460] = 2;
+    image[472] = 1;
+    image[473] = 1;
+    image[512] = 0x37;
+    image[516] = 5;
+    image[523] = 0x60;
+    image[528] = 0x38;
+    image[532] = 2;
+    image[536] = 0xbf;
+    image[539] = 0x50;
+    memcpy(image + 576, "pixel", 5);
+    memset(image + 608, 'T', 16);
     locations[8] = 6;
     locations[16] = 9;
     locations[32] = 8;
@@ -87,15 +98,24 @@ static int verify_psin(rage62_rpf9* archive, char* error, size_t error_capacity)
 
 static int verify_paged(rage62_rpf9* archive, char* error, size_t error_capacity) {
     const unsigned char table[24] = {8, 0, 0, 0, 2, 0, 0, 2,
-                                     8, 0, 0, 0, 8, 0, 0, 0,
+                                     12, 0, 0, 0, 12, 0, 0, 0,
                                      2, 0, 0, 0, 2, 0, 0, 0};
-    rage62_resource9* resource = rage62_rpf9_load_resource(archive, 4, 176, table, sizeof(table), error, error_capacity);
+    rage62_resource9* resource = rage62_rpf9_load_resource(archive, 4, 240, table, sizeof(table), error, error_capacity);
     const void* system = rage62_resource9_resolve(resource, 0x50000010, 4);
     const void* graphics = rage62_resource9_resolve(resource, 0x60000000, 5);
+    size_t count = 0;
+    rage62_0drp_record first;
+    rage62_0drp_record second;
     const int passed = system && graphics && memcmp(system, "0DRP", 4) == 0 && memcmp(graphics, "pixel", 5) == 0 &&
-                       !rage62_resource9_resolve(resource, 0x5000007f, 2) &&
+                       !rage62_resource9_resolve(resource, 0x500000bf, 2) &&
                        !rage62_resource9_resolve(resource, 0x60000020, 1) &&
-                       !rage62_resource9_resolve(resource, UINT64_C(0x150000010), 4);
+                       !rage62_resource9_resolve(resource, UINT64_C(0x150000010), 4) &&
+                       rage62_resource9_0drp_count(resource, &count) && count == 2 &&
+                       rage62_resource9_0drp_record(resource, 0, &first) && first.word_0 == 0x37 &&
+                       first.size_hint == 5 && first.pointer == 0x60000000 && first.data == graphics &&
+                       rage62_resource9_0drp_record(resource, 1, &second) && second.word_0 == 0x38 &&
+                       second.size_hint == 2 && second.pointer == 0x500000bf && second.data == NULL &&
+                       !rage62_resource9_0drp_record(resource, 2, &second);
     rage62_resource9_close(resource);
     return passed;
 }
