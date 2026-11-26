@@ -81,3 +81,13 @@ The C++ interface is in [`rpf9.h`](rpf7/include/rage62/rpf9.h). The on-disk
 catalog and trailer are treated as opaque regions. Header geometry follows
 the [published measurements](https://github.com/JoshRob297/rpf9-research/blob/main/docs/RPF9.md).
 The supported location words follow the [public record description](https://github.com/zeozeozeo/rpf9/blob/main/src/entry.rs).
+
+### Calling RPF9 from a native host
+
+Link the import library for `rage62_rpf9_bridge` and include
+[`rpf9_bridge.h`](rpf7/include/rage62/rpf9_bridge.h). Open the archive and the
+supplied plaintext catalog, then use an entry index to query metadata or read
+into a caller-owned buffer. Reads use offsets relative to the physical span.
+They return fewer bytes at span end and zero bytes at end of span. The standalone
+C host test checks that reads stay clear of the next entry and the archive
+trailer. Resource decoding and the engine-side file adapter are separate steps.

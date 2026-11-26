@@ -38,8 +38,12 @@ public:
     const std::vector<Rpf9Entry>& entries() const { return entries_; }
 
     bool copy_span(std::size_t index, std::ostream& output, std::string& error);
+    bool read_span(std::size_t index, std::uint64_t offset, char* buffer, std::size_t capacity,
+                   std::size_t& received, std::string& error);
 
 private:
+    bool seek_span(std::size_t index, std::uint64_t offset, std::string& error);
+
     std::ifstream stream_;
     Rpf9Header header_{};
     std::vector<Rpf9Entry> entries_;

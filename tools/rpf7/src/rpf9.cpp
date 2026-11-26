@@ -106,14 +106,34 @@ bool Rpf9Archive::load_catalog(const std::filesystem::path& path, std::string& e
     return true;
 }
 
-bool Rpf9Archive::copy_span(std::size_t index, std::ostream& output, std::string& error) {
+bool Rpf9Archive::seek_span(std::size_t index, std::uint64_t offset, std::string& error) {
     if (index >= entries_.size()) return fail(error, "RPF9 entry index out of range");
     const auto& entry = entries_[index];
+    if (offset > entry.span) return fail(error, "RPF9 read offset out of range");
     stream_.clear();
-    if (!stream_.seekg(static_cast<std::streamoff>(entry.offset))) {
+    if (!stream_.seekg(static_cast<std::streamoff>(entry.offset + offset))) {
         return fail(error, "cannot seek to RPF9 entry");
     }
-    return detail::copy_bytes(stream_, output, entry.span, error);
+    return true;
+}
+
+bool Rpf9Archive::copy_span(std::size_t index, std::ostream& output, std::string& error) {
+    if (!seek_span(index, 0, error)) return false;
+    return detail::copy_bytes(stream_, output, entries_[index].span, error);
+}
+
+bool Rpf9Archive::read_span(std::size_t index, std::uint64_t offset, char* buffer, std::size_t capacity,
+                           std::size_t& received, std::string& error) {
+    received = 0;
+    if (capacity != 0 && !buffer) return fail(error, "missing RPF9 output buffer");
+    if (!seek_span(index, offset, error)) return false;
+    const auto length = std::min<std::uint64_t>(capacity, entries_[index].span - offset);
+    if (length != 0 && !stream_.read(buffer, static_cast<std::streamsize>(length))) {
+        return fail(error, "cannot read RPF9 payload");
+    }
+    received = static_cast<std::size_t>(length);
+    error.clear();
+    return true;
 }
 
 }

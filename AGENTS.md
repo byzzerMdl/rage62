@@ -13,6 +13,8 @@ for build commands and CLI usage.
   RPF9 header, supplied plaintext location records, and raw spans.
 - `tools/rpf7/include/rage62/rpf7.h` and `tools/rpf7/src/bridge.cpp` define the
   C ABI used by native host callers.
+- `tools/rpf7/include/rage62/rpf9_bridge.h` and `tools/rpf7/src/rpf9_bridge.cpp`
+  expose the RPF9 entry metadata and bounded read API to a native host.
 - `tools/rpf7/tests/` contains the synthetic archive reader and C host tests.
 
 ## Develop and verify a change
