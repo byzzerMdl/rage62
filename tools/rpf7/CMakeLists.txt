@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(rage62_rpf LANGUAGES C CXX)
 
-add_library(rage62_archive STATIC src/archive.cpp src/rpf9.cpp src/rpf9_chunks.cpp src/psin.cpp src/zlib_member.cpp)
+add_library(rage62_archive STATIC src/archive.cpp src/rpf9.cpp src/rpf9_chunks.cpp src/psin.cpp src/resource9.cpp src/zlib_member.cpp)
 set_target_properties(rage62_archive PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_features(rage62_archive PUBLIC cxx_std_17)
 target_include_directories(rage62_archive PUBLIC include)

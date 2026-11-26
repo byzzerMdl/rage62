@@ -135,3 +135,24 @@ Native C callers can use `rage62_rpf9_load_psin` from
 zero length for raw or single-zlib entries, or the plaintext chunk table bytes
 for a chunked entry. `rage62_psin_get_block` returns a borrowed view of the
 resource data. Release the resource with `rage62_psin_close` after using it.
+
+### Loading paged RAGE 9 resources
+
+Use `--resource` with an encoding-2 chunk table and the exact stored length.
+
+```powershell
+../rage62-rpf-build/rage62_host.exe --resource sample.rpf sample.catalog 0 176 sample.chunks
+```
+
+This mode reconstructs the declared system and graphics pages, validates the
+page map, and reports the two segment sizes. It recognizes the `0DRP` marker
+when present. It keeps raw chunks and joins a split zlib page when its chunk
+sizes and the declared page count agree. A resource that declares more pages
+than the entry provides returns an error.
+
+`Rage9Resource::resolve` and the DLL function `rage62_resource9_resolve` read
+bounded byte ranges using stored `0x5` or `0x6` pointers. The resulting view
+belongs to the resource. Resource-specific object layouts and runtime objects
+are outside the page loader's scope. See the
+[page map](https://github.com/leonidaforge/research/blob/main/formats/resources/pages.md)
+and [pointer encoding](https://github.com/leonidaforge/research/blob/main/formats/resources/pointers.md).

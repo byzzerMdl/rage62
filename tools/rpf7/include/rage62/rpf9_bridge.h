@@ -18,6 +18,7 @@ extern "C" {
 
 typedef struct rage62_rpf9 rage62_rpf9;
 typedef struct rage62_psin rage62_psin;
+typedef struct rage62_resource9 rage62_resource9;
 
 typedef struct {
     uint64_t offset;
@@ -54,6 +55,13 @@ RAGE62_RPF9_API void rage62_psin_close(rage62_psin* resource);
 RAGE62_RPF9_API size_t rage62_psin_block_count(const rage62_psin* resource);
 /* A block view remains valid until rage62_psin_close(). */
 RAGE62_RPF9_API int rage62_psin_get_block(const rage62_psin* resource, size_t index, rage62_psin_block* block);
+
+RAGE62_RPF9_API rage62_resource9* rage62_rpf9_load_resource(rage62_rpf9* archive, size_t index,
+                                                          uint64_t stored_size, const void* chunk_table,
+                                                          size_t table_size, char* error, size_t error_capacity);
+RAGE62_RPF9_API void rage62_resource9_close(rage62_resource9* resource);
+/* Returns NULL for an invalid pointer or range. A view is owned by the resource. */
+RAGE62_RPF9_API const void* rage62_resource9_resolve(const rage62_resource9* resource, uint64_t pointer, size_t length);
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,6 @@
 #include "rage62/rpf9_bridge.h"
 #include "rage62/psin.h"
+#include "rage62/resource9.h"
 #include "rage62/rpf9.h"
 #include "bridge_error.h"
 
@@ -12,6 +13,10 @@ struct rage62_rpf9 {
 
 struct rage62_psin {
     rage62::PsinResource resource;
+};
+
+struct rage62_resource9 {
+    rage62::Rage9Resource resource;
 };
 
 using rage62::detail::set_error;
@@ -109,4 +114,33 @@ int rage62_psin_get_block(const rage62_psin* resource, size_t index, rage62_psin
     const auto& item = resource->resource.blocks[index];
     *block = {resource->resource.data.data() + item.offset, item.size, item.id};
     return 1;
+}
+
+rage62_resource9* rage62_rpf9_load_resource(rage62_rpf9* archive, size_t index, uint64_t stored_size,
+                                            const void* chunk_table, size_t table_size, char* error, size_t error_capacity) {
+    if (!archive || !chunk_table || table_size == 0) {
+        set_error(error, error_capacity, "missing RPF9 archive or plain chunk table");
+        return nullptr;
+    }
+    try {
+        auto result = std::make_unique<rage62_resource9>();
+        const std::string_view table(static_cast<const char*>(chunk_table), table_size);
+        std::string message;
+        const bool loaded = result->resource.load(archive->archive, index, stored_size, table, message);
+        set_error(error, error_capacity, message.c_str());
+        return loaded ? result.release() : nullptr;
+    } catch (const std::exception& ex) {
+        set_error(error, error_capacity, ex.what());
+        return nullptr;
+    }
+}
+
+void rage62_resource9_close(rage62_resource9* resource) {
+    delete resource;
+}
+
+const void* rage62_resource9_resolve(const rage62_resource9* resource, uint64_t pointer, size_t length) {
+    if (!resource) return nullptr;
+    const auto view = resource->resource.resolve(pointer, length);
+    return view ? view->data() : nullptr;
 }

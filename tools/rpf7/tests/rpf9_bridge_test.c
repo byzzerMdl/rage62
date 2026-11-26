@@ -12,13 +12,13 @@ static int write_file(const char* path, const void* bytes, size_t size) {
 }
 
 static int write_fixtures(const char* archive, const char* catalog) {
-    unsigned char image[384] = {'9', 'F', 'P', 'R', 80, 0, 0, 0, 64, 0, 0, 0, 16};
-    unsigned char locations[96] = {0};
+    unsigned char image[560] = {'9', 'F', 'P', 'R', 80, 0, 0, 0, 64, 0, 0, 0, 16};
+    unsigned char locations[120] = {0};
     unsigned char resource[96] = {
         'P', 'S', 'I', 'N', 0, 0, 0, 48,
         0x29, 0, 0, 0, 3, 0, 0, 0, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa
     };
-    image[36] = 4;
+    image[36] = 5;
     memset(image + 96, 'A', 32);
     memset(image + 128, 'B', 32);
     memcpy(resource + 32, "one", 3);
@@ -26,12 +26,20 @@ static int write_fixtures(const char* archive, const char* catalog) {
                           "LGID\0\0\0\010LRSC\0\0\0\010CHKS\0\0\0\010", 48);
     memcpy(image + 160, resource, sizeof(resource));
     memcpy(image + 272, resource, sizeof(resource));
-    memset(image + 368, 'T', 16);
+    // Fifth entry: encoding-2 prefix, system page and graphics page.
+    image[392] = 0x40;
+    image[395] = 0x50;
+    memcpy(image + 400, "0DRP", 4);
+    image[456] = 1;
+    image[457] = 1;
+    memcpy(image + 512, "pixel", 5);
+    memset(image + 544, 'T', 16);
     locations[8] = 6;
     locations[16] = 9;
     locations[32] = 8;
     locations[56] = 10;
     locations[80] = 16;
+    locations[104] = 23;
     return write_file(archive, image, sizeof(image)) && write_file(catalog, locations, sizeof(locations));
 }
 
@@ -40,9 +48,9 @@ static int verify_reads(rage62_rpf9* archive, char* error, size_t error_capacity
     size_t received;
     rage62_rpf9_entry entry;
 
-    if (rage62_rpf9_count(archive) != 4 || !rage62_rpf9_get_entry(archive, 0, &entry) ||
+    if (rage62_rpf9_count(archive) != 5 || !rage62_rpf9_get_entry(archive, 0, &entry) ||
         entry.offset != 96 || entry.span != 32 || entry.identifier != 9 ||
-        rage62_rpf9_get_entry(archive, 4, &entry)) return 0;
+        rage62_rpf9_get_entry(archive, 5, &entry)) return 0;
 
     if (!rage62_rpf9_read(archive, 1, 31, output, sizeof(output), &received, error, error_capacity) ||
         received != 1 || output[0] != 'B' || output[1] != 0) return 0;
@@ -77,6 +85,21 @@ static int verify_psin(rage62_rpf9* archive, char* error, size_t error_capacity)
            verify_resource(rage62_rpf9_load_psin(archive, 3, 112, table, sizeof(table), error, error_capacity));
 }
 
+static int verify_paged(rage62_rpf9* archive, char* error, size_t error_capacity) {
+    const unsigned char table[24] = {8, 0, 0, 0, 2, 0, 0, 2,
+                                     8, 0, 0, 0, 8, 0, 0, 0,
+                                     2, 0, 0, 0, 2, 0, 0, 0};
+    rage62_resource9* resource = rage62_rpf9_load_resource(archive, 4, 176, table, sizeof(table), error, error_capacity);
+    const void* system = rage62_resource9_resolve(resource, 0x50000010, 4);
+    const void* graphics = rage62_resource9_resolve(resource, 0x60000000, 5);
+    const int passed = system && graphics && memcmp(system, "0DRP", 4) == 0 && memcmp(graphics, "pixel", 5) == 0 &&
+                       !rage62_resource9_resolve(resource, 0x5000007f, 2) &&
+                       !rage62_resource9_resolve(resource, 0x60000020, 1) &&
+                       !rage62_resource9_resolve(resource, UINT64_C(0x150000010), 4);
+    rage62_resource9_close(resource);
+    return passed;
+}
+
 int main(void) {
     const char* archive_path = "rage62_rpf9_bridge_test.rpf";
     const char* catalog_path = "rage62_rpf9_bridge_test.catalog";
@@ -84,7 +107,8 @@ int main(void) {
     int passed = 0;
     if (write_fixtures(archive_path, catalog_path)) {
         rage62_rpf9* archive = rage62_rpf9_open(archive_path, catalog_path, error, sizeof(error));
-        passed = archive && verify_reads(archive, error, sizeof(error)) && verify_psin(archive, error, sizeof(error));
+        passed = archive && verify_reads(archive, error, sizeof(error)) && verify_psin(archive, error, sizeof(error)) &&
+                 verify_paged(archive, error, sizeof(error));
         rage62_rpf9_close(archive);
     }
     remove(archive_path);

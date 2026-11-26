@@ -35,10 +35,9 @@ Chunk decode_chunk(unsigned layout, std::uint64_t word) {
     }
 }
 
-}
-
-bool read_rpf9_chunks(Rpf9Archive& archive, std::size_t entry, std::uint64_t stored_size,
-                      std::string_view table, std::string& decoded, std::string& error) {
+bool decode(Rpf9Archive& archive, std::size_t entry, std::uint64_t stored_size,
+            std::string_view table, std::string& decoded, std::vector<Rpf9DecodedChunk>* boundaries,
+            std::string& error) {
     if (entry >= archive.entries().size()) return fail(error, "RPF9 chunked entry index out of range");
     if (stored_size > archive.entries()[entry].span || stored_size > detail::max_resource_bytes) {
         return fail(error, "RPF9 chunked entry exceeds its stored span or the 64 MiB limit");
@@ -81,11 +80,27 @@ bool read_rpf9_chunks(Rpf9Archive& archive, std::size_t entry, std::uint64_t sto
         } else {
             result.append(encoded);
         }
+        if (boundaries) boundaries->push_back({chunk.logical_size, chunk.method == 3});
         position += chunk.stored_size;
     }
     if (position != stored_size) return fail(error, "RPF9 chunks do not cover the stored entry size");
     decoded = std::move(result);
     error.clear();
+    return true;
+}
+
+}
+
+bool read_rpf9_chunks(Rpf9Archive& archive, std::size_t entry, std::uint64_t stored_size,
+                      std::string_view table, std::string& decoded, std::string& error) {
+    return decode(archive, entry, stored_size, table, decoded, nullptr, error);
+}
+
+bool read_rpf9_chunks(Rpf9Archive& archive, std::size_t entry, std::uint64_t stored_size,
+                      std::string_view table, Rpf9ChunkedPayload& decoded, std::string& error) {
+    Rpf9ChunkedPayload result;
+    if (!decode(archive, entry, stored_size, table, result.data, &result.chunks, error)) return false;
+    decoded = std::move(result);
     return true;
 }
 
