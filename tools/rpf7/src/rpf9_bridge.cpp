@@ -1,4 +1,5 @@
 #include "rage62/rpf9_bridge.h"
+#include "rage62/psin.h"
 #include "rage62/rpf9.h"
 #include "bridge_error.h"
 
@@ -7,6 +8,10 @@
 
 struct rage62_rpf9 {
     rage62::Rpf9Archive archive;
+};
+
+struct rage62_psin {
+    rage62::PsinResource resource;
 };
 
 using rage62::detail::set_error;
@@ -65,4 +70,43 @@ int rage62_rpf9_read(rage62_rpf9* archive, size_t index, uint64_t offset,
         set_error(error, error_capacity, ex.what());
         return 0;
     }
+}
+
+rage62_psin* rage62_rpf9_load_psin(rage62_rpf9* archive, size_t index, uint64_t stored_size,
+                                 const void* chunk_table, size_t table_size, char* error, size_t error_capacity) {
+    if (!archive || ((chunk_table == nullptr) != (table_size == 0))) {
+        set_error(error, error_capacity, "missing RPF9 archive or invalid chunk table buffer");
+        return nullptr;
+    }
+    try {
+        auto result = std::make_unique<rage62_psin>();
+        std::string message;
+        bool loaded;
+        if (chunk_table) {
+            const std::string_view table(static_cast<const char*>(chunk_table), table_size);
+            loaded = rage62::load_chunked_psin(archive->archive, index, stored_size, table, result->resource, message);
+        } else {
+            loaded = rage62::load_psin(archive->archive, index, stored_size, result->resource, message);
+        }
+        set_error(error, error_capacity, message.c_str());
+        return loaded ? result.release() : nullptr;
+    } catch (const std::exception& ex) {
+        set_error(error, error_capacity, ex.what());
+        return nullptr;
+    }
+}
+
+void rage62_psin_close(rage62_psin* resource) {
+    delete resource;
+}
+
+size_t rage62_psin_block_count(const rage62_psin* resource) {
+    return resource ? resource->resource.blocks.size() : 0;
+}
+
+int rage62_psin_get_block(const rage62_psin* resource, size_t index, rage62_psin_block* block) {
+    if (!block || index >= rage62_psin_block_count(resource)) return 0;
+    const auto& item = resource->resource.blocks[index];
+    *block = {resource->resource.data.data() + item.offset, item.size, item.id};
+    return 1;
 }

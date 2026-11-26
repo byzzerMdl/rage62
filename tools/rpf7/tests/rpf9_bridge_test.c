@@ -12,15 +12,26 @@ static int write_file(const char* path, const void* bytes, size_t size) {
 }
 
 static int write_fixtures(const char* archive, const char* catalog) {
-    unsigned char image[176] = {'9', 'F', 'P', 'R', 80, 0, 0, 0, 64, 0, 0, 0, 16};
-    unsigned char locations[48] = {0};
-    image[36] = 2;
+    unsigned char image[384] = {'9', 'F', 'P', 'R', 80, 0, 0, 0, 64, 0, 0, 0, 16};
+    unsigned char locations[96] = {0};
+    unsigned char resource[96] = {
+        'P', 'S', 'I', 'N', 0, 0, 0, 48,
+        0x29, 0, 0, 0, 3, 0, 0, 0, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa
+    };
+    image[36] = 4;
     memset(image + 96, 'A', 32);
     memset(image + 128, 'B', 32);
-    memset(image + 160, 'T', 16);
+    memcpy(resource + 32, "one", 3);
+    memcpy(resource + 48, "LSCH\0\0\0\010LENM\0\0\0\010LSNS\0\0\0\010"
+                          "LGID\0\0\0\010LRSC\0\0\0\010CHKS\0\0\0\010", 48);
+    memcpy(image + 160, resource, sizeof(resource));
+    memcpy(image + 272, resource, sizeof(resource));
+    memset(image + 368, 'T', 16);
     locations[8] = 6;
     locations[16] = 9;
     locations[32] = 8;
+    locations[56] = 10;
+    locations[80] = 16;
     return write_file(archive, image, sizeof(image)) && write_file(catalog, locations, sizeof(locations));
 }
 
@@ -29,9 +40,9 @@ static int verify_reads(rage62_rpf9* archive, char* error, size_t error_capacity
     size_t received;
     rage62_rpf9_entry entry;
 
-    if (rage62_rpf9_count(archive) != 2 || !rage62_rpf9_get_entry(archive, 0, &entry) ||
+    if (rage62_rpf9_count(archive) != 4 || !rage62_rpf9_get_entry(archive, 0, &entry) ||
         entry.offset != 96 || entry.span != 32 || entry.identifier != 9 ||
-        rage62_rpf9_get_entry(archive, 2, &entry)) return 0;
+        rage62_rpf9_get_entry(archive, 4, &entry)) return 0;
 
     if (!rage62_rpf9_read(archive, 1, 31, output, sizeof(output), &received, error, error_capacity) ||
         received != 1 || output[0] != 'B' || output[1] != 0) return 0;
@@ -48,6 +59,24 @@ static int verify_reads(rage62_rpf9* archive, char* error, size_t error_capacity
            received == sizeof(output) && memcmp(output, "AAAA", sizeof(output)) == 0 && error[0] == '\0';
 }
 
+static int verify_resource(rage62_psin* resource) {
+    rage62_psin_block block;
+    const int passed = resource && rage62_psin_block_count(resource) == 1 &&
+                       rage62_psin_get_block(resource, 0, &block) && block.id == 0x29 &&
+                       block.size == 3 && memcmp(block.data, "one", 3) == 0 &&
+                       !rage62_psin_get_block(resource, 1, &block);
+    rage62_psin_close(resource);
+    return passed;
+}
+
+static int verify_psin(rage62_rpf9* archive, char* error, size_t error_capacity) {
+    const unsigned char table[24] = {8, 0, 0, 0, 2, 0, 0, 2,
+                                     3, 0, 0, 0, 3, 0, 0, 0,
+                                     3, 0, 0, 0, 3, 0, 0, 0};
+    return verify_resource(rage62_rpf9_load_psin(archive, 2, 96, NULL, 0, error, error_capacity)) &&
+           verify_resource(rage62_rpf9_load_psin(archive, 3, 112, table, sizeof(table), error, error_capacity));
+}
+
 int main(void) {
     const char* archive_path = "rage62_rpf9_bridge_test.rpf";
     const char* catalog_path = "rage62_rpf9_bridge_test.catalog";
@@ -55,7 +84,7 @@ int main(void) {
     int passed = 0;
     if (write_fixtures(archive_path, catalog_path)) {
         rage62_rpf9* archive = rage62_rpf9_open(archive_path, catalog_path, error, sizeof(error));
-        passed = archive && verify_reads(archive, error, sizeof(error));
+        passed = archive && verify_reads(archive, error, sizeof(error)) && verify_psin(archive, error, sizeof(error));
         rage62_rpf9_close(archive);
     }
     remove(archive_path);

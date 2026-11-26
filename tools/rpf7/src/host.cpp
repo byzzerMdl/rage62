@@ -1,10 +1,8 @@
 #include "rage62/psin.h"
 #include "rage62/rpf9.h"
-#include "rage62/rpf9_chunks.h"
 
 #include <charconv>
 #include <iostream>
-#include <utility>
 
 namespace {
 
@@ -49,10 +47,8 @@ int startup(const std::filesystem::path& archive_path, const std::filesystem::pa
         loaded = rage62::load_psin(archive, entry, stored_size, resource, error);
     } else {
         std::string table;
-        std::string decoded;
         loaded = read_table(chunk_table, table, error) &&
-                 rage62::read_rpf9_chunks(archive, entry, stored_size, table, decoded, error) &&
-                 rage62::parse_psin(std::move(decoded), resource, error);
+                 rage62::load_chunked_psin(archive, entry, stored_size, table, resource, error);
     }
     if (!loaded) {
         std::cerr << "PSIN load: " << error << '\n';
@@ -65,6 +61,7 @@ int startup(const std::filesystem::path& archive_path, const std::filesystem::pa
         std::cout << " offset=" << chunk.offset << " length=" << chunk.size << '\n';
     }
     std::cout << "schema structures=" << resource.structures.size() << " enums=" << resource.enums.size() << '\n';
+    std::cout << "data blocks=" << resource.blocks.size() << " opaque schema values=" << resource.schema_blocks.size() << '\n';
     std::cout.flush();
     return std::cout ? 0 : 1;
 }

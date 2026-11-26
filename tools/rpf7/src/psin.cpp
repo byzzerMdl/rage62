@@ -1,4 +1,5 @@
 #include "rage62/psin.h"
+#include "rage62/rpf9_chunks.h"
 #include "archive_io.h"
 #include "zlib_member.h"
 
@@ -11,7 +12,7 @@ namespace {
 
 constexpr std::size_t chunk_header_size = 8;
 constexpr std::size_t schema_record_size = 16;
-constexpr std::array<std::string_view, 7> chain = {"PSIN", "LSCH", "LENM", "LSNS", "LGID", "LRSC", "CHKS"};
+constexpr std::array<std::string_view, 7> lsch_chain = {"PSIN", "LSCH", "LENM", "LSNS", "LGID", "LRSC", "CHKS"};
 using detail::fail;
 using detail::little_word;
 using detail::max_resource_bytes;
@@ -32,28 +33,128 @@ struct SchemaTable {
 constexpr SchemaTable structures{32, 16, 0xaa, 28, 16, "invalid PSIN LSCH table"};
 constexpr SchemaTable enums{24, 8, 0xee, 16, 0, "invalid PSIN LENM table"};
 
+std::uint32_t big_word(const unsigned char* bytes) {
+    return (std::uint32_t(bytes[0]) << 24) | (std::uint32_t(bytes[1]) << 16) |
+           (std::uint32_t(bytes[2]) << 8) | bytes[3];
+}
+
+std::uint64_t aligned16(std::uint32_t value) {
+    return (std::uint64_t(value) + 15) & ~std::uint64_t{15};
+}
+
+bool is_tag(const PsinChunk& chunk, std::string_view tag) {
+    return std::string_view(chunk.tag.data(), chunk.tag.size()) == tag;
+}
+
+bool matches_psin_chain(const std::vector<PsinChunk>& chunks) {
+    if (chunks.size() < 6 || !is_tag(chunks.front(), "PSIN")) return false;
+    if (is_tag(chunks[1], "LSCH")) {
+        return chunks.size() == lsch_chain.size() &&
+               std::equal(chunks.begin(), chunks.end(), lsch_chain.begin(), is_tag);
+    }
+    return is_tag(chunks[1], "PMAP") && is_tag(chunks[2], "PSCH") && is_tag(chunks[3], "PSIG") &&
+           (chunks.size() == 6 || is_tag(chunks[4], "STDN") || is_tag(chunks[4], "STFN")) &&
+           is_tag(chunks[chunks.size() - 2], "STNS") && is_tag(chunks.back(), "CHKS");
+}
+
 bool read_chunks(PsinResource& resource, std::string& error) {
     const std::string_view bytes(resource.data);
     std::size_t offset = 0;
-    for (std::size_t index = 0; index < chain.size(); ++index) {
+    while (offset != bytes.size()) {
+        if (resource.chunks.size() == lsch_chain.size()) return fail(error, "trailing bytes after PSIN chunk chain");
         if (bytes.size() - offset < chunk_header_size) return fail(error, "truncated PSIN chunk header");
-        if (bytes.substr(offset, 4) != chain[index]) return fail(error, "unsupported PSIN chunk order");
         const auto* length = reinterpret_cast<const unsigned char*>(bytes.data() + offset + 4);
-        const auto size = (std::uint32_t(length[0]) << 24) | (std::uint32_t(length[1]) << 16) |
-                          (std::uint32_t(length[2]) << 8) | length[3];
+        const auto size = big_word(length);
         if (size < chunk_header_size || size > bytes.size() - offset) return fail(error, "invalid PSIN chunk length");
-        auto& chunk = resource.chunks[index];
+        auto& chunk = resource.chunks.emplace_back();
         std::copy_n(bytes.data() + offset, chunk.tag.size(), chunk.tag.begin());
         chunk.offset = offset;
         chunk.size = size;
         offset += size;
     }
-    return offset == bytes.size() || fail(error, "trailing bytes after PSIN chunk chain");
+    return matches_psin_chain(resource.chunks) || fail(error, "unsupported PSIN chunk order");
 }
 
 std::string_view chunk_body(const PsinResource& resource, std::size_t index) {
     const auto& chunk = resource.chunks[index];
     return std::string_view(resource.data).substr(chunk.offset + chunk_header_size, chunk.size - chunk_header_size);
+}
+
+bool has_descriptor_marker(const unsigned char* marker) {
+    return std::all_of(marker, marker + 8, [](unsigned char byte) { return byte == 0xaa; });
+}
+
+bool read_lsch_blocks(PsinResource& resource, std::string& error) {
+    const auto end = resource.chunks[0].size;
+    const auto* data = reinterpret_cast<const unsigned char*>(resource.data.data());
+    // Earlier framing-only fixtures and unrecognized pre-sections remain opaque.
+    if (end < 24 || !has_descriptor_marker(data + 16)) return true;
+
+    std::size_t descriptor = 8;
+    std::uint64_t remaining = end - 16;
+    while (remaining != 0) {
+        if (remaining < 16 || !has_descriptor_marker(data + descriptor + 8)) {
+            return fail(error, "invalid PSIN block descriptor table");
+        }
+        const auto length = little_word(data + descriptor + 4);
+        const auto padded = aligned16(length);
+        if (padded > remaining - 16) return fail(error, "PSIN block exceeds the data region");
+        resource.blocks.push_back({little_word(data + descriptor), 0, length});
+        descriptor += 16;
+        remaining -= 16 + padded;
+    }
+    auto offset = descriptor + 8;
+    for (auto& block : resource.blocks) {
+        block.offset = offset;
+        offset += static_cast<std::size_t>(aligned16(static_cast<std::uint32_t>(block.size)));
+    }
+    return true;
+}
+
+bool read_pmap_blocks(PsinResource& resource, std::string& error) {
+    const auto body = chunk_body(resource, 1);
+    if (body.size() < 16) return fail(error, "truncated PSIN PMAP header");
+    const auto* data = reinterpret_cast<const unsigned char*>(body.data());
+    const auto count = (unsigned(data[8]) << 8) | data[9];
+    if (count == 0 || body.size() - 16 != std::size_t(count) * 16) return fail(error, "invalid PSIN PMAP record count");
+
+    const auto first_section = resource.chunks[0].size;
+    std::uint64_t expected = 16;
+    resource.blocks.reserve(count);
+    for (unsigned index = 0; index < count; ++index) {
+        const auto* record = data + 16 + index * 16;
+        const auto offset = big_word(record + 4);
+        const auto length = big_word(record + 12);
+        if (offset != expected || offset > first_section || length > first_section - offset) {
+            return fail(error, "invalid PSIN PMAP block range");
+        }
+        resource.blocks.push_back({big_word(record), offset, length});
+        expected += index + 1 == count ? length : aligned16(length);
+    }
+    return expected == first_section || fail(error, "PSIN PMAP blocks do not end at the first section");
+}
+
+bool read_psch_blocks(PsinResource& resource, std::string& error) {
+    const auto body = chunk_body(resource, 2);
+    if (body.size() < 12) return fail(error, "truncated PSIN PSCH header");
+    const auto* data = reinterpret_cast<const unsigned char*>(body.data());
+    const auto count = big_word(data);
+    if (count > (body.size() - 12) / 8) return fail(error, "invalid PSIN PSCH record count");
+    const auto values_at = 12 + std::size_t(count) * 8;
+    if ((count == 0 && values_at != body.size()) || (count != 0 && big_word(data + 8) != values_at)) {
+        return fail(error, "invalid PSIN PSCH value start");
+    }
+
+    const auto body_offset = resource.chunks[2].offset + chunk_header_size;
+    resource.schema_blocks.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index) {
+        const auto* row = data + 4 + std::size_t(index) * 8;
+        const std::size_t from = big_word(row + 4);
+        const std::size_t to = index + 1 == count ? body.size() : big_word(row + 12);
+        if (from >= to || to > body.size()) return fail(error, "invalid PSIN PSCH value range");
+        resource.schema_blocks.push_back({big_word(row), body_offset + from, to - from});
+    }
+    return true;
 }
 
 bool schema_headers(std::string_view body, const SchemaTable& format, std::size_t& end, std::string& error) {
@@ -125,7 +226,12 @@ bool parse_psin(std::string bytes, PsinResource& resource, std::string& error) {
     if (bytes.size() > max_resource_bytes) return fail(error, "PSIN exceeds the 64 MiB limit");
     PsinResource result;
     result.data = std::move(bytes);
-    if (!read_chunks(result, error) || !read_structures(result, error) || !read_enums(result, error)) return false;
+    if (!read_chunks(result, error)) return false;
+    if (is_tag(result.chunks[1], "LSCH")) {
+        if (!read_lsch_blocks(result, error) || !read_structures(result, error) || !read_enums(result, error)) return false;
+    } else if (!read_pmap_blocks(result, error) || !read_psch_blocks(result, error)) {
+        return false;
+    }
     resource = std::move(result);
     error.clear();
     return true;
@@ -151,6 +257,13 @@ bool load_psin(Rpf9Archive& archive, std::size_t entry, std::uint64_t stored_siz
     }
     std::string decoded;
     return detail::append_zlib_member(encoded, decoded, max_resource_bytes, error) &&
+           parse_psin(std::move(decoded), resource, error);
+}
+
+bool load_chunked_psin(Rpf9Archive& archive, std::size_t entry, std::uint64_t stored_size,
+                       std::string_view table, PsinResource& resource, std::string& error) {
+    std::string decoded;
+    return read_rpf9_chunks(archive, entry, stored_size, table, decoded, error) &&
            parse_psin(std::move(decoded), resource, error);
 }
 

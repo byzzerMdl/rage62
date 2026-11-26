@@ -9,6 +9,10 @@ void store_word(std::string& bytes, std::size_t offset, std::uint32_t value) {
     for (unsigned i = 0; i < 4; ++i) bytes.at(offset + i) = static_cast<char>(value >> (i * 8));
 }
 
+void store_big_word(std::string& bytes, std::size_t offset, std::uint32_t value) {
+    for (unsigned i = 0; i < 4; ++i) bytes.at(offset + i) = static_cast<char>(value >> (24 - i * 8));
+}
+
 std::string chunk(const char* tag, const std::string& body) {
     const auto size = static_cast<std::uint32_t>(body.size() + 8);
     std::string bytes(tag, 4);
@@ -100,6 +104,73 @@ bool check_schema(const std::filesystem::path& path, const std::filesystem::path
            resource.data == valid;
 }
 
+bool check_blocks(std::string& error) {
+    std::string pre_section(88, 'p');
+    store_word(pre_section, 0, 0x101);
+    store_word(pre_section, 4, 1);
+    pre_section.replace(8, 8, 8, static_cast<char>(0xaa));
+    store_word(pre_section, 16, 0x202);
+    store_word(pre_section, 20, 17);
+    pre_section.replace(24, 8, 8, static_cast<char>(0xaa));
+    pre_section[40] = 'A';
+    pre_section.replace(56, 17, 17, 'B');
+    const auto schema_tail = chunk("LSCH", "") + chunk("LENM", "") + chunk("LSNS", "") +
+                             chunk("LGID", "") + chunk("LRSC", "") + chunk("CHKS", "");
+    rage62::PsinResource resource;
+    if (!rage62::parse_psin(chunk("PSIN", pre_section) + schema_tail, resource, error)) return false;
+    if (resource.blocks.size() != 2 || resource.blocks[0].id != 0x101 || resource.blocks[0].offset != 48 ||
+        resource.blocks[0].size != 1 || resource.blocks[1].id != 0x202 || resource.blocks[1].offset != 64 ||
+        resource.blocks[1].size != 17 || resource.data.substr(resource.blocks[1].offset, 17) != std::string(17, 'B')) {
+        return false;
+    }
+    store_word(pre_section, 20, 0xffffffff);
+    if (rage62::parse_psin(chunk("PSIN", pre_section) + schema_tail, resource, error) ||
+        error.find("data region") == std::string::npos || resource.blocks.size() != 2) return false;
+
+    std::string pmap(48, '\0');
+    pmap[9] = 2;
+    pmap.replace(10, 6, 6, 'p');
+    store_big_word(pmap, 16, 0x901);
+    store_big_word(pmap, 20, 16);
+    store_big_word(pmap, 28, 3);
+    store_big_word(pmap, 32, 0x902);
+    store_big_word(pmap, 36, 32);
+    store_big_word(pmap, 44, 5);
+
+    std::string psch(35, '\0');
+    store_big_word(psch, 0, 2);
+    store_big_word(psch, 4, 0x901);
+    store_big_word(psch, 8, 28);
+    store_big_word(psch, 12, 0x902);
+    store_big_word(psch, 16, 31);
+    psch.replace(28, 7, "XYZabcd");
+
+    std::string pmap_pre_section(29, 'p'); // First tagged section lands at 37, without last-block padding.
+    pmap_pre_section.replace(8, 3, "one");
+    pmap_pre_section.replace(24, 5, "three");
+    const auto pmap_prefix = chunk("PSIN", pmap_pre_section);
+    const auto pmap_tail = chunk("STNS", "") + chunk("CHKS", "");
+    const auto pmap_sections = [&] {
+        return pmap_prefix + chunk("PMAP", pmap) + chunk("PSCH", psch) + chunk("PSIG", "");
+    };
+    if (!rage62::parse_psin(pmap_sections() + pmap_tail, resource, error) || resource.chunks.size() != 6 ||
+        resource.blocks.size() != 2 || resource.schema_blocks.size() != 2 || !resource.structures.empty() ||
+        resource.blocks[1].id != 0x902 || resource.blocks[1].offset != 32 || resource.blocks[1].size != 5 ||
+        resource.data.substr(resource.blocks[1].offset, 5) != "three" ||
+        resource.schema_blocks[0].id != 0x901 || resource.schema_blocks[0].size != 3 ||
+        resource.data.substr(resource.schema_blocks[1].offset, resource.schema_blocks[1].size) != "abcd") return false;
+
+    if (!rage62::parse_psin(pmap_sections() + chunk("STFN", "") + pmap_tail, resource, error) ||
+        !rage62::parse_psin(pmap_sections() + chunk("STDN", "") + pmap_tail, resource, error)) return false;
+    store_big_word(psch, 16, 27);
+    if (rage62::parse_psin(pmap_sections() + pmap_tail, resource, error) ||
+        error.find("PSCH value") == std::string::npos) return false;
+    store_big_word(psch, 16, 31);
+    store_big_word(pmap, 36, 31);
+    return !rage62::parse_psin(pmap_sections() + pmap_tail, resource, error) &&
+           error.find("PMAP block range") != std::string::npos && resource.blocks.size() == 2;
+}
+
 bool check_resources(const std::filesystem::path& path, const std::filesystem::path& catalog_path,
                      const std::filesystem::path& bad_path, std::string& error) {
     constexpr char source[] = "PSIN\0\0\0\x0b" "abc"
@@ -166,7 +237,8 @@ int main() {
     const std::filesystem::path catalog = "rage62_psin_test.catalog";
     const std::filesystem::path bad = "rage62_psin_test.bad";
     std::string error;
-    const bool passed = check_resources(path, catalog, bad, error) && check_schema(path, catalog, error);
+    const bool passed = check_resources(path, catalog, bad, error) && check_schema(path, catalog, error) &&
+                        check_blocks(error);
     std::filesystem::remove(path);
     std::filesystem::remove(catalog);
     std::filesystem::remove(bad);

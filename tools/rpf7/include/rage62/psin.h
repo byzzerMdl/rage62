@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace rage62 {
@@ -39,9 +40,17 @@ struct PsinEnum {
     std::vector<PsinEnumValue> values;
 };
 
+struct PsinBlock {
+    std::uint32_t id;
+    std::size_t offset; // Absolute offset within PsinResource::data.
+    std::size_t size;
+};
+
 struct PsinResource {
     std::string data;
-    std::array<PsinChunk, 7> chunks;
+    std::vector<PsinChunk> chunks;
+    std::vector<PsinBlock> blocks;
+    std::vector<PsinBlock> schema_blocks; // Opaque PSCH values in the PMAP family.
     std::vector<PsinStructure> structures;
     std::vector<PsinEnum> enums;
 };
@@ -49,8 +58,11 @@ struct PsinResource {
 bool parse_psin(std::string bytes, PsinResource& resource, std::string& error);
 
 // stored_size is the exact stored length, excluding the RPF9 span's padding.
-// Accepts a raw seven-chunk PSIN resource or one zlib member containing it.
+// Accepts a raw PSIN resource or one zlib member containing it.
 bool load_psin(Rpf9Archive& archive, std::size_t entry, std::uint64_t stored_size,
                PsinResource& resource, std::string& error);
+
+bool load_chunked_psin(Rpf9Archive& archive, std::size_t entry, std::uint64_t stored_size,
+                       std::string_view table, PsinResource& resource, std::string& error);
 
 }

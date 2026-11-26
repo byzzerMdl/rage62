@@ -103,15 +103,18 @@ An RPF9 size hint may describe a different size than the stored payload.
 ```
 
 The host reads a raw PSIN resource or one zlib member when built with zlib. It
-validates the seven-section chain from `PSIN` through `CHKS` and reports each
-section's offset and length, plus the number of structures and enums. The
+validates the `LSCH` or `PMAP` section chain through `CHKS` and reports each
+section's offset and length, plus schema and data-block counts. The
 [`PsinResource` API](rpf7/include/rage62/psin.h) exposes the `LSCH` structures
 and field descriptors and the `LENM` enums and signed values. Both tables
-require the headers-first layout and exact record counts. Input and inflated
-data each have a 64 MiB limit. Instance decoding, script execution and the
-RAGE 2015 integration remain separate milestones. See the
+require the headers-first layout and exact record counts. Recognized `LSCH`
+descriptors and `PMAP` block tables yield bounded data views. `PSCH` value
+ranges in the `PMAP` variant expose opaque schema bytes. Earlier framing-only
+`LSCH` resources without a recognized descriptor marker yield no data blocks.
+Input and inflated data each have a 64 MiB limit. Typed instance decoding,
+script execution, and RAGE 2015 integration remain separate milestones. See the
 [PSIN format measurements](https://github.com/JoshRob297/rpf9-research/blob/main/docs/PSIN.md) and
-[record field reference](https://github.com/rpatty-dev/PercyStar/blob/6a64e53f6d1c48aae250109232eebb02a2a68e36/src/vehicle_data.rs#L287-L339).
+[data-block layout](https://github.com/leonidaforge/research/blob/main/formats/unknown/psin/README.md).
 
 For a chunked entry, add the path to the supplied plaintext chunk-table value
 as the final argument. The stored byte length includes the encoding-2 prefix
@@ -126,3 +129,9 @@ sizes, skips table-declared padding, and reads each zlib block independently.
 Copy blocks work in builds without zlib. C++ callers can read the decoded
 payload through [`read_rpf9_chunks`](rpf7/include/rage62/rpf9_chunks.h).
 The supported formats follow the [RPF9 payload measurements](https://github.com/leonidaforge/research/blob/main/formats/containers/rpf9/payloads.md#chunk-table).
+
+Native C callers can use `rage62_rpf9_load_psin` from
+[`rpf9_bridge.h`](rpf7/include/rage62/rpf9_bridge.h). Supply a null table and
+zero length for raw or single-zlib entries, or the plaintext chunk table bytes
+for a chunked entry. `rage62_psin_get_block` returns a borrowed view of the
+resource data. Release the resource with `rage62_psin_close` after using it.
