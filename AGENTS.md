@@ -15,6 +15,9 @@ for build commands and CLI usage.
 
 ## Develop and verify a change
 
+- For compatibility work, identify the RAGE 9 requirement and the RAGE 2015
+  host subsystem the module extends. Use RPF7 checks to verify the legacy
+  archive path during integration.
 - Keep each change focused on a single module or host interface. Preserve
   existing caller behavior. If a change affects the host ABI, explain how
   callers built with older compilers can upgrade.

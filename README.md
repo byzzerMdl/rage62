@@ -1,18 +1,18 @@
 # rage62
 
-rage62 is an experimental Windows x64 compatibility project. Its long-term
-goal is to adapt a RAGE 2015 (RAGE 7) host so that GTA VI can run natively. The
-project builds independently written modules for the RAGE 9 data and interfaces
-that the older engine would need to handle.
+rage62 adds RAGE 9 compatibility to a RAGE 2015 (RAGE 7) host on Windows x64.
+Independently written modules extend or replace specific subsystems in the
+RAGE 2015 host so it can handle the data and runtime interfaces expected by
+RAGE 9. The long-term goal is native GTA VI startup in the adapted host.
 
 **Early development. Native GTA VI startup remains unverified.**
 
 | Component | Status |
 | --- | --- |
-| RPF7 reader | Lists little-endian `OPEN` and `NONE` catalogs and streams unencrypted binary entries. zlib enables raw DEFLATE. |
+| RPF7 baseline | The standalone reader lists little-endian `OPEN` and `NONE` catalogs and streams unencrypted binary entries. zlib enables raw DEFLATE. |
 | Native host bridge | The Windows DLL exposes a C ABI. A standalone client built with MSVC v141 has exercised it. |
 | RPF9 | Header inspection is available. Catalog and payload support are planned. |
-| RAGE 7 integration | Connecting the DLL to the engine's filesystem is the next milestone. |
+| RAGE 7 integration | The first milestone is loading one RAGE 9 resource through a RAGE 2015 host subsystem. |
 | Game startup | Requires verified asset loading, runtime interfaces, and renderer integration. |
 
 ## Build the current tools
@@ -36,15 +36,14 @@ reader limits, and details on calling the DLL.
 Engine-side tests require access to a compatible RAGE 2015 development
 environment with permission to modify it.
 
-1. **Connect the archive layer to a RAGE 7 host.** Exercise the engine's file
-   interface against a synthetic RPF7 and verify that a host consumer receives
-   the expected bytes. The repository already exposes the C interface that
-   this adapter can call.
-2. **Validate RAGE 9 data compatibility one format at a time.** Extend archive
-   support and use synthetic fixtures to check resource layout, version
-   handling, and the data passed to the host. Start with one resource type that
-   can be loaded in isolation.
-3. **Verify runtime contracts and rendering.** Test the platform services,
+1. **Implement the required RAGE 9 data support.** Start with one RPF9 catalog
+   layout and one resource type. Use synthetic fixtures to check version
+   handling, resource metadata, and payload bytes.
+2. **Integrate the module into RAGE 2015.** Build it against the compatible
+   host and connect it to the relevant filesystem or resource-loading
+   subsystem. Verify that the host can consume the synthetic RAGE 9 resource.
+   Use RPF7 as a regression check for the existing archive path.
+3. **Extend the host's runtime and rendering support.** Test the platform services,
    streaming, and renderer behavior needed for a controlled startup. Record the
    first reproducible milestone for each subsystem. Game launch is the final
    integration milestone.
